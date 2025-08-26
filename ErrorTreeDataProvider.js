@@ -49,6 +49,20 @@ export class ErrorTreeDataProvider {
 
             solutionItem.tooltip = "Click to view formatted AI solution";
             children.push(solutionItem);
+
+            // 🔊 Add Voice Explanation option
+            const voiceItem = new vscode.TreeItem(
+                "🔊 Voice Explanation",
+                vscode.TreeItemCollapsibleState.None
+            );
+            voiceItem.command = {
+                command: 'ai-error-helper.playVoiceExplanation',
+                title: 'Play Voice Explanation',
+                arguments: [errorInfo.solution]
+            };
+            voiceItem.tooltip = "Click to listen to the AI solution as audio";
+            children.push(voiceItem);
+
         } else {
             const getSolutionItem = new vscode.TreeItem(
                 "🤖 Get AI Solution",
@@ -61,6 +75,19 @@ export class ErrorTreeDataProvider {
             };
             getSolutionItem.tooltip = "Click to call the Gemini API for an explanation";
             children.push(getSolutionItem);
+
+            // 🔊 Add Voice Explanation option even before solution is fetched
+            const voiceItem = new vscode.TreeItem(
+                "🔊 Voice Explanation",
+                vscode.TreeItemCollapsibleState.None
+            );
+            voiceItem.command = {
+                command: 'ai-error-helper.playVoiceExplanation',
+                title: 'Play Voice Explanation',
+                arguments: [errorInfo] // still pass errorInfo, can fetch + speak
+            };
+            voiceItem.tooltip = "Click to directly listen to the explanation";
+            children.push(voiceItem);
         }
 
         return children;
