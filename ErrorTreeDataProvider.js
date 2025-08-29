@@ -37,7 +37,7 @@ export class ErrorTreeDataProvider {
         if (errorInfo.solution) {
             // Show one TreeItem that opens Webview for formatted solution
             const solutionItem = new vscode.TreeItem(
-                "🤖 AI Solution",
+                "🤖 Click to see Explanation",
                 vscode.TreeItemCollapsibleState.None
             );
 
@@ -47,7 +47,7 @@ export class ErrorTreeDataProvider {
                 arguments: [errorInfo.solution]
             };
 
-            solutionItem.tooltip = "Click to view formatted AI solution";
+            solutionItem.tooltip = "Click to directly listen to the explanation";
             children.push(solutionItem);
 
             // 🔊 Add Voice Explanation option
@@ -60,12 +60,12 @@ export class ErrorTreeDataProvider {
                 title: 'Play Voice Explanation',
                 arguments: [errorInfo.solution]
             };
-            voiceItem.tooltip = "Click to listen to the AI solution as audio";
+            voiceItem.tooltip = "Click to listen Explanation";
             children.push(voiceItem);
 
         } else {
             const getSolutionItem = new vscode.TreeItem(
-                "🤖 Get AI Solution",
+                "🤖 Get Error Explanation",
                 vscode.TreeItemCollapsibleState.None
             );
             getSolutionItem.command = {
@@ -73,10 +73,9 @@ export class ErrorTreeDataProvider {
                 title: 'Get AI Explanation',
                 arguments: [errorInfo]
             };
-            getSolutionItem.tooltip = "Click to call the Gemini API for an explanation";
+            getSolutionItem.tooltip = "Click to get Error Explanation.";
             children.push(getSolutionItem);
 
-            // 🔊 Add Voice Explanation option even before solution is fetched
             const voiceItem = new vscode.TreeItem(
                 "🔊 Voice Explanation",
                 vscode.TreeItemCollapsibleState.None

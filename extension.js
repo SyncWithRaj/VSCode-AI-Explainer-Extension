@@ -2,20 +2,22 @@ import * as vscode from 'vscode';
 import axios from 'axios';
 import { ErrorTreeDataProvider } from './ErrorTreeDataProvider.js';
 import { AIChatDataProvider } from './AIChatDataProvider.js';
-
+import PDFDocument from 'pdfkit';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const GEMINI_API_KEY = "YOUR_GEMINI_API_KEY";
 const MURF_API_KEY = "YOUR_MURF_API_KEY";
+// const GEMINI_API_KEY = "YOUR_GEMINI_API_KEY";
+// const MURF_API_KEY = "YOUR_MURF_API_KEY";
 
 export async function activate(context) {
     const errorProvider = new ErrorTreeDataProvider();
     vscode.window.createTreeView('aiErrorHelperView', { treeDataProvider: errorProvider });
 
-    // === NEW: AI Chat tab (TreeView list) ===
     const aiChatProvider = new AIChatDataProvider();
     vscode.window.createTreeView('aiChatView', { treeDataProvider: aiChatProvider });
 
-    // === NEW: Open Chat Panel command (rich chat UI inside panel) ===
     context.subscriptions.push(
         vscode.commands.registerCommand('ai-chat.openPanel', () => openChatPanel(context, aiChatProvider))
     );
@@ -78,7 +80,6 @@ export async function activate(context) {
 
     updateSidebar();
 
-    // === COMMAND 1: Get AI Explanation (unchanged) ===
     const disposableGetExplanation = vscode.commands.registerCommand('ai-error-helper.getExplanation', async (errorInfo) => {
         if (!errorInfo) return;
 
@@ -112,11 +113,19 @@ export async function activate(context) {
 
             // clean markdown
             solutionText = solutionText
-                .replace(/```[a-z]*\n([\s\S]*?)```/gi, '$1')
-                .replace(/\*\*(.*?)\*\*/g, '$1')
-                .replace(/__(.*?)__/g, '$1')
-                .replace(/`(.*?)`/g, '$1')
-                .replace(/\bc\+\+\b/gi, '');
+                // Fences like ```js ... ```
+                .replace(/```[a-z0-9+#-]*\n?([\s\S]*?)```/gi, "$1")
+                // **bold**
+                .replace(/\*\*(.*?)\*\*/g, "$1")
+                // __underline__
+                .replace(/__(.*?)__/g, "$1")
+                // `inline code`
+                .replace(/`([^`]*)`/g, "$1")
+                // remove standalone C++ mentions
+                .replace(/\bC\+\+\b/gi, "")
+                // collapse multiple spaces/newlines
+                .replace(/\s+/g, " ")
+                .trim();
 
             errorToUpdate.solution = solutionText;
             errorProvider.refresh(errorProvider.errors);
@@ -129,7 +138,7 @@ export async function activate(context) {
         }
     });
 
-    
+
     const disposablePlayVoiceExplanation = vscode.commands.registerCommand(
         'ai-error-helper.playVoiceExplanation',
         async (errorInfo) => {
@@ -150,20 +159,28 @@ Code line: "${codeLine}"`;
                 );
 
                 let solutionText = geminiRes.data?.candidates?.[0]?.content?.parts?.[0]?.text || "No explanation available.";
-                // clean markdown for TTS
                 solutionText = solutionText
-                    .replace(/```[a-z]*\n([\s\S]*?)```/gi, '$1')
-                    .replace(/\*\*(.*?)\*\*/g, '$1')
-                    .replace(/__(.*?)__/g, '$1')
-                    .replace(/`(.*?)`/g, '$1');
+                    // Fences like ```js ... ```
+                    .replace(/```[a-z0-9+#-]*\n?([\s\S]*?)```/gi, "$1")
+                    // **bold**
+                    .replace(/\*\*(.*?)\*\*/g, "$1")
+                    // __underline__
+                    .replace(/__(.*?)__/g, "$1")
+                    // `inline code`
+                    .replace(/`([^`]*)`/g, "$1")
+                    // remove standalone C++ mentions
+                    .replace(/\bC\+\+\b/gi, "")
+                    // collapse multiple spaces/newlines
+                    .replace(/\s+/g, " ")
+                    .trim();
 
-                // Murf TTS (plays without opening your solution webview)
+
                 vscode.window.setStatusBarMessage("🔊 Generating voice explanation...", 2000);
                 const ttsRes = await axios.post(
                     "https://api.murf.ai/v1/speech/generate",
                     {
                         text: solutionText,
-                        voice_id: "en-US-natalie",
+                        voice_id: "en-IN-eashwar",
                         style: "Promo"
                     },
                     {
@@ -177,7 +194,6 @@ Code line: "${codeLine}"`;
 
                 const audioUrl = ttsRes.data?.audioFile || ttsRes.data?.audio_url;
                 if (audioUrl) {
-                    // Open externally so we don't change VS Code tab/webview
                     vscode.env.openExternal(vscode.Uri.parse(audioUrl));
                 } else {
                     vscode.window.showErrorMessage("❌ Failed to fetch audio URL from Murf.");
@@ -190,7 +206,6 @@ Code line: "${codeLine}"`;
         }
     );
 
-    // === Command to show solution in webview & TTS (UNCHANGED style) ===
     const disposableShowWebview = vscode.commands.registerCommand(
         'ai-error-helper.showSolutionWebview',
         (solution, errorMessage) => {
@@ -216,7 +231,7 @@ Code line: "${codeLine}"`;
             );
 
             panel.webview.html = `
-<!DOCTYPE html>
+            <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -226,30 +241,53 @@ Code line: "${codeLine}"`;
 <style>
     body {
         font-family: 'Poppins', sans-serif;
-        padding: 40px;
         margin: 0;
         background: linear-gradient(135deg, #0d0d10, #1a1a1f);
         color: #e4e6eb;
         line-height: 1.8;
         display: flex;
         justify-content: center;
+        align-items: center;
+        min-height: 100vh;
     }
     .container {
-        max-width: 900px;
+        max-width: 800px;
         width: 100%;
         max-height: 70vh;
         overflow-y: auto;
-        padding: 28px 32px;
+        padding: 24px 28px;
         background: rgba(255, 255, 255, 0.03);
-        border-radius: 16px;
-        backdrop-filter: blur(10px);
-        box-shadow: 0 6px 20px rgba(0,0,0,0.6);
-        margin-bottom: 28px;
+        border-radius: 14px;
+        backdrop-filter: blur(12px);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.6);
         white-space: pre-wrap;
         word-wrap: break-word;
         font-size: 15px;
         border: 1px solid rgba(255,255,255,0.08);
+        transition: all 0.3s ease;
+        display: flex;
+        flex-direction: column;
+         gap: 12px;
     }
+
+    #speakBtn, #downloadPdfBtn {
+        display: inline-block;
+        margin-right: 8px;
+        padding: 8px 14px;
+        border-radius: 6px;
+        border: none;
+        cursor: pointer;
+        background: #4cafef;
+        color: white;
+        font-size: 14px;
+        transition: 0.3s ease;
+    }
+
+    #speakBtn:hover, #downloadPdfBtn:hover {
+        background: #0077cc;
+    }
+
+
     h1, h2, h3 {
         color: #4dabf7;
         margin-bottom: 14px;
@@ -266,7 +304,8 @@ Code line: "${codeLine}"`;
         cursor: pointer;
         transition: all 0.25s ease;
         box-shadow: 0 4px 14px rgba(0,0,0,0.3);
-        margin-top: 8px;
+        margin-top: 14px;
+        display: block;
     }
     button:hover {
         transform: translateY(-2px);
@@ -274,7 +313,7 @@ Code line: "${codeLine}"`;
         background: linear-gradient(135deg, #5cb6ff, #1a6fc2);
     }
     #audio-player-container {
-        margin-top: 22px;
+        margin-top: 20px;
         display: flex;
         justify-content: center;
         width: 100%;
@@ -282,14 +321,12 @@ Code line: "${codeLine}"`;
     audio {
         width: 100%;
         max-width: 680px;
-        height: 50px;
+        height: 48px;
         border-radius: 12px;
         background: #141418;
         box-shadow: 0 4px 14px rgba(0,0,0,0.4), inset 0 0 6px rgba(255,255,255,0.05);
         outline: none;
-        overflow: hidden;
         -webkit-appearance: none;
-        -moz-appearance: none;
         appearance: none;
     }
     audio::-webkit-media-controls-panel {
@@ -309,40 +346,171 @@ Code line: "${codeLine}"`;
     .container::-webkit-scrollbar { width: 8px; }
     .container::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 6px; }
     .container::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); }
+
+    .loading-box {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        padding: 40px 28px;
+        border-radius: 16px;
+        background: rgba(77,171,247,0.08);
+        border: 1px solid rgba(77,171,247,0.25);
+        font-weight: 600;
+        font-size: 16px;
+        color: #4dabf7;
+        box-shadow: 0 0 18px rgba(77,171,247,0.25);
+        text-align: center;
+        min-height: 180px;
+    }
+    .dots {
+        display: flex;
+        gap: 6px;
+    }
+    .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #4dabf7;
+        animation: blink 1.4s infinite;
+    }
+    .dot:nth-child(2) { animation-delay: 0.2s; }
+    .dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes blink {
+        0%, 80%, 100% { opacity: 0.3; transform: scale(0.9); }
+        40% { opacity: 1; transform: scale(1.2); }
+    }
+
+    .voice-select {
+    width: 100%;
+    padding: 10px 14px;
+    margin: 12px 0;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.07);
+    backdrop-filter: blur(8px);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 500;
+    outline: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.voice-select:hover,
+.voice-select:focus {
+    border-color: #4e9eff;
+    background: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 0 12px rgba(78, 158, 255, 0.4);
+}
+
+.voice-select option {
+    background: #1c1c1c;
+    color: #fff;
+    padding: 10px;
+    font-size: 14px;
+}
+
 </style>
 </head>
 <body>
 <div>
-    <div class="container">${solutionForHtmlDisplay}</div>
-    <button id="speakBtn">🔊 Explain in Voice</button>
+    <div class="container" id="solution-container">${solutionForHtmlDisplay}</div>
+            <div>
+                <select id="voiceSelect" class="voice-select" >
+                    <option value="en-IN-aarav">Aarav (Male, Indian)</option>
+                    <option value="en-IN-priya">Priya (Female, Indian)</option>
+                    <option value="en-US-natalie">Natalie (Female, US)</option>
+                    <option value="en-US-marcus">Marcus (Male, US)</option>
+                    <option value="en-UK-freddie">Freddie (Male, British)</option>
+                </select>
+
+                <select id="styleSelect" class="voice-select">
+                    <option value="default">Default Style</option>
+                    <option value="conversational">Conversational</option>
+                    <option value="promo">Promo</option>
+                    <option value="narration">Narration</option>
+                </select>
+            </div>
+            <div style="display: flex; gap: 10px; width: 100%; margin-top: 10px;">
+    <button id="speakBtn" style="flex: 1; padding: 10px; font-size: 14px; cursor: pointer; border-radius: 6px; border: none; background: #007bff; color: white;">
+        🔊 Explain in Voice
+    </button>
+    <button id="downloadPdfBtn" style="flex: 1; padding: 10px; font-size: 14px; cursor: pointer; border-radius: 6px; border: none; background: #28a745; color: white;">
+        📥 Download as PDF
+    </button>
+</div>
+
     <div id="audio-player-container"></div>
 </div>
 <script>
     const vscode = acquireVsCodeApi();
     const speakBtn = document.getElementById('speakBtn');
+    const style = document.getElementById("styleSelect").value;
+    const downloadPdfBtn = document.getElementById('downloadPdfBtn');
+    const solutionContainer = document.getElementById('solution-container');
     const textToSpeak = ${solutionForTTS};
 
+    
+    // 🚀 Replace boring loading text with styled loader
+    if (solutionContainer.innerText.includes("⏳ Explanation loading")) {
+        solutionContainer.innerHTML = \`
+            <div class="loading-box">
+                <div>⏳ Explanation loading...</div>
+                <div class="dots">
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                </div>
+            </div>\`;
+        speakBtn.style.display = "none";
+        downloadPdfBtn.style.display = "none";
+        document.getElementById("voiceSelect").style.display = "none"; // 👈 hide voice
+        document.getElementById("styleSelect").style.display = "none"; // 👈 hide style
+    }
+
+downloadPdfBtn.addEventListener('click', () => {
+        vscode.postMessage({ command: 'downloadPdf', text: solutionContainer.innerText });
+    });
+
     speakBtn.addEventListener('click', () => {
-        speakBtn.innerText = '🔊 Generating...';
-        speakBtn.disabled = true;
-        document.getElementById('audio-player-container').innerHTML = '';
-        vscode.postMessage({ command: 'speak', text: textToSpeak });
+    const selectedVoice = voiceSelect.value; // 👈 selected voice
+      const selectedStyle = document.getElementById("styleSelect").value;
+    speakBtn.innerText = '🔊 Generating...';
+    speakBtn.disabled = true;
+    document.getElementById('audio-player-container').innerHTML = '';
+    vscode.postMessage({ 
+            command: 'speak', 
+            text: textToSpeak, 
+            voice: selectedVoice,
+            style: selectedStyle  
+        });
     });
 
     window.addEventListener('message', event => {
         const message = event.data;
+        if (message.command === 'explanationLoaded') {
+        speakBtn.style.display = "inline-block";
+        downloadPdfBtn.style.display = "inline-block";
+        document.getElementById("voiceSelect").style.display = "block"; // 👈 show voice dropdown
+        document.getElementById("styleSelect").style.display = "block"; // 👈 show style dropdown
+    }
         switch (message.command) {
             case 'speechFinished':
                 speakBtn.innerText = '🔊 Explain in Voice';
                 speakBtn.disabled = false;
+                speakBtn.style.display = "inline-block";
                 break;
             case 'playAudio':
                 const playerContainer = document.getElementById('audio-player-container');
+                playerContainer.innerHTML = "";
                 const audioPlayer = document.createElement('audio');
                 audioPlayer.src = message.url;
                 audioPlayer.controls = true;
                 audioPlayer.autoplay = true;
                 playerContainer.appendChild(audioPlayer);
+                speakBtn.style.display = "inline-block";
                 break;
         }
     });
@@ -350,6 +518,9 @@ Code line: "${codeLine}"`;
 </body>
 </html>
 `;
+
+
+
 
             panel.webview.onDidReceiveMessage(async (message) => {
                 if (message.command === 'speak' && message.text) {
@@ -359,8 +530,8 @@ Code line: "${codeLine}"`;
                         const response = await axios.post(
                             "https://api.murf.ai/v1/speech/generate", {
                             text: message.text,
-                            voice_id: "en-US-natalie",
-                            style: "Promo"
+                            voice_id: message.voice || "en-IN-eashwar", 
+                            style: message.style || "Conversational"
                         }, {
                             headers: {
                                 "Content-Type": "application/json",
@@ -383,6 +554,28 @@ Code line: "${codeLine}"`;
                         panel.webview.postMessage({ command: 'speechFinished' });
                     }
                 }
+
+                if (message.command === 'downloadPdf' && message.text) {
+                    try {
+                        const workspaceFolders = vscode.workspace.workspaceFolders;
+                        const folderPath = workspaceFolders ? workspaceFolders[0].uri.fsPath : require('os').homedir();
+                        const filePath = path.join(folderPath, "explanation.pdf");
+
+                        const doc = new PDFDocument();
+                        const stream = fs.createWriteStream(filePath);
+                        doc.pipe(stream);
+                        doc.fontSize(14).text(message.text, { align: "left" });
+                        doc.end();
+
+                        stream.on("finish", () => {
+                            vscode.window.showInformationMessage(`✅ PDF saved: ${filePath}`);
+                            vscode.env.openExternal(vscode.Uri.file(filePath)); // auto-open
+                        });
+                    } catch (err) {
+                        console.error("PDF Generation Error:", err);
+                        vscode.window.showErrorMessage("❌ Failed to generate PDF");
+                    }
+                }
             });
         }
     );
@@ -397,7 +590,7 @@ Code line: "${codeLine}"`;
 export function openChatPanel(context, aiChatProvider) {
     const panel = vscode.window.createWebviewPanel(
         "aiChatPanel",
-        "AI Chat (Gemini)",
+        "CodeWhisper",
         vscode.ViewColumn.One,
         { enableScripts: true, retainContextWhenHidden: true }
     );
@@ -425,7 +618,6 @@ export function openChatPanel(context, aiChatProvider) {
                     "No response.";
                 aiChatProvider.addMessage("ai", reply);
 
-                // Send AI response to WebView
                 panel.webview.postMessage({
                     command: "chat:append",
                     role: "ai",
@@ -443,14 +635,13 @@ export function openChatPanel(context, aiChatProvider) {
             }
         }
 
-        // Murf TTS request
         if (message.command === "chat:tts") {
             try {
                 const res = await axios.post(
                     "https://api.murf.ai/v1/speech/generate",
                     {
                         text: message.text,
-                        voice_id: "en-US-natalie",
+                        voice_id: "en-IN-eashwar",
                         style: "Promo",
                     },
                     {
@@ -478,20 +669,18 @@ export function openChatPanel(context, aiChatProvider) {
     });
 }
 
-// NOTE: getChatHtml must exist somewhere in your project.
-// If it's in another file, keep it as-is. If not, add your implementation.
-
 function getChatHtml() {
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&family=Montserrat:wght@600&display=swap" rel="stylesheet">
 <style>
 :root {
     --bg: #0d0f14;
     --chat-bg: #181a20;
-    --user-bg: #0b74ff;
+    --header-bg: #111318;
+    --user-bg: linear-gradient(135deg,#0b74ff,#1a91ff);
     --user-color: #fff;
     --ai-bg: #2c2f38;
     --ai-color: #e6edf3;
@@ -505,30 +694,53 @@ body {
     display: flex;
     flex-direction: column;
     background: var(--bg);
-    padding: 20px;
+    color: #e6edf3;
 }
+
+/* 🔹 Header Bar */
+#header {
+    background: var(--header-bg);
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 600;
+    font-size: 18px;
+    letter-spacing: 0.5px;
+    color: #4dabf7;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.6);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+/* 🔹 Chat Window */
 #chat {
     flex: 1;
     overflow-y: auto;
-    padding: 20px;
+    padding: 22px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 18px;
     scroll-behavior: smooth;
     background: var(--chat-bg);
-    border-radius: 24px;
-    margin: 0 10px 16px 10px;
-    box-shadow: inset 0 0 15px rgba(0,0,0,0.5);
+    border-radius: 24px 24px 0 0;
+    margin: 0 12px;
+    box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
 }
 .row { display: flex; flex-direction: column; }
 .msg {
     max-width: 75%;
     padding: 14px 18px;
-    border-radius: 20px;
-    line-height: 1.5;
+    border-radius: 18px;
+    line-height: 1.6;
     word-wrap: break-word;
     box-shadow: 0 4px 14px rgba(0,0,0,0.5);
     margin: 2px 0;
+    font-size: 15px;
+    animation: fadeIn 0.3s ease;
 }
 .user { 
     align-self: flex-end;
@@ -556,20 +768,22 @@ pre {
     margin-top: 8px;
     font-size: 13px;
     cursor: pointer;
-    color: #0b74ff;
+    color: #4dabf7;
     text-decoration: underline;
     transition: color 0.2s ease;
 }
-.read-btn:hover { color: #3399ff; }
+.read-btn:hover { color: #6dbfff; }
+
+/* 🔹 Composer (Message box) */
 #composer {
     display: flex;
-    padding: 12px 16px;
+    padding: 14px 16px;
     gap: 10px;
     background: var(--chat-bg);
-    border-radius: 20px;
-    margin: 0 10px 10px 10px;
+    border-radius: 0 0 20px 20px;
+    margin: 0 12px 14px 12px;
     align-items: center;
-    box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+    box-shadow: 0 -4px 16px rgba(0,0,0,0.5);
 }
 #input {
     flex: 1;
@@ -585,7 +799,7 @@ pre {
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 #input:focus { 
-    border-color: var(--user-bg); 
+    border-color: #0b74ff; 
     box-shadow: 0 0 6px rgba(11,116,255,0.4); 
 }
 button {
@@ -593,8 +807,8 @@ button {
     height: 42px;
     border-radius: 9999px;
     border: none;
-    background: var(--user-bg);
-    color: var(--user-color);
+    background: #0b74ff;
+    color: white;
     cursor: pointer;
     font-size: 18px;
     display: flex;
@@ -606,12 +820,19 @@ button:hover {
     background: #005ecb; 
     transform: translateY(-2px) scale(1.05); 
 }
+
+/* Animations */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
 </style>
 </head>
 <body>
+<div id="header">✨ Your Personal Doubt Clearer ✨</div>
 <div id="chat"></div>
 <div id="composer">
-    <textarea id="input" placeholder="Type or paste code…"></textarea>
+    <textarea id="input" placeholder="Type your doubt…"></textarea>
     <button id="send">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" 
         viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" 
@@ -622,89 +843,88 @@ button:hover {
     </button>
 </div>
 <audio id="player" controls style="display:none;"></audio>
-<script>
-const vscode = acquireVsCodeApi();
-const chat = document.getElementById('chat');
-const input = document.getElementById('input');
-const sendBtn = document.getElementById('send');
-const player = document.getElementById('player');
+    <script>
+        const vscode = acquireVsCodeApi();
+        const chat = document.getElementById('chat');
+        const input = document.getElementById('input');
+        const sendBtn = document.getElementById('send');
+        const player = document.getElementById('player');
 
-function append(role, text, typing=false) {
-    const row = document.createElement('div');
-    row.className = 'row';
+        function append(role, text, typing=false) {
+            const row = document.createElement('div');
+            row.className = 'row';
 
-    const bubble = document.createElement('div');
-    bubble.className = 'msg ' + (role==='user' ? 'user' : 'ai');
+            const bubble = document.createElement('div');
+            bubble.className = 'msg ' + (role==='user' ? 'user' : 'ai');
 
-    const meta = document.createElement('div');
-    meta.className = 'meta';
-    meta.textContent = role==='user' ? '🧑 You' : '🤖 Gemini';
+            const meta = document.createElement('div');
+            meta.className = 'meta';
+            meta.textContent = role==='user' ? '🧑 You' : '🤖 CodeWhisper';
 
-    const body = document.createElement('div');
-    const pre = document.createElement('pre');
-    body.appendChild(pre);
-    bubble.appendChild(meta);
-    bubble.appendChild(body);
+            const body = document.createElement('div');
+            const pre = document.createElement('pre');
+            body.appendChild(pre);
+            bubble.appendChild(meta);
+            bubble.appendChild(body);
 
-    if(role === 'ai'){
-        const readBtn = document.createElement('div');
-        readBtn.className = 'read-btn';
-        readBtn.textContent = '🔊 Read';
-        readBtn.addEventListener('click', ()=> {
-            vscode.postMessage({command:'chat:tts', text});
-        });
-        bubble.appendChild(readBtn);
-    }
+            if(role === 'ai'){
+                const readBtn = document.createElement('div');
+                readBtn.className = 'read-btn';
+                readBtn.textContent = '🔊 Read';
+                readBtn.addEventListener('click', ()=> {
+                    vscode.postMessage({command:'chat:tts', text});
+                });
+                bubble.appendChild(readBtn);
+            }
 
-    row.appendChild(bubble);
-    chat.appendChild(row);
-    chat.scrollTop = chat.scrollHeight;
-
-    if(typing && role==='ai') {
-        typeWriter(pre, text);
-    } else {
-        pre.textContent = text;
-    }
-}
-
-function typeWriter(element, text, i=0) {
-    if(i===0){ element.textContent=''; }
-    if(i<text.length){
-        setTimeout(() => {
-            element.textContent+=text.charAt(i);
-            typeWriter(element, text, i+1);
+            row.appendChild(bubble);
+            chat.appendChild(row);
             chat.scrollTop = chat.scrollHeight;
-        }, 20);
-    }
-}
 
-// Enter to send
-input.addEventListener('keydown', e=>{
-    if(e.key==='Enter' && !e.shiftKey){
-        e.preventDefault();
-        sendMessage();
-    }
-});
-sendBtn.addEventListener('click', sendMessage);
+            if(typing && role==='ai') {
+                typeWriter(pre, text);
+            } else {
+                pre.textContent = text;
+            }
+        }
 
-function sendMessage(){
-    const text=input.value.trim();
-    if(!text) return;
-    vscode.postMessage({command:'chat:send', text});
-    append('user', text);
-    input.value='';
-}
+        function typeWriter(element, text, i=0) {
+            if(i===0){ element.textContent=''; }
+            if(i<text.length){
+                setTimeout(() => {
+                    element.textContent+=text.charAt(i);
+                    typeWriter(element, text, i+1);
+                    chat.scrollTop = chat.scrollHeight;
+                }, 18);
+            }
+        }
 
-window.addEventListener('message', e=>{
-    const {command} = e.data||{};
-    if(command==='chat:append'){
-        append(e.data.role, e.data.text, e.data.role==='ai');
-    }
-    if(command==='chat:playAudio'){
-        player.src = e.data.url;
-        player.play();
-    }
-});
+        input.addEventListener('keydown', e=>{
+            if(e.key==='Enter' && !e.shiftKey){
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+        sendBtn.addEventListener('click', sendMessage);
+
+        function sendMessage(){
+            const text=input.value.trim();
+            if(!text) return;
+            vscode.postMessage({command:'chat:send', text});
+            append('user', text);
+            input.value='';
+        }
+
+        window.addEventListener('message', e=>{
+            const {command} = e.data||{};
+            if(command==='chat:append'){
+                append(e.data.role, e.data.text, e.data.role==='ai');
+            }
+            if(command==='chat:playAudio'){
+                player.src = e.data.url;
+                player.play();
+            }
+        });
 </script>
 </body>
 </html>`;
