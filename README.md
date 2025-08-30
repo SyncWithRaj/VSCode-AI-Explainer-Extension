@@ -1,8 +1,8 @@
-# Voice Debugger Extension 🔊🐞  
+# CodeWhisper - VS Code Voice Debugger Extension🔊🐞  
 
-An AI-powered **VS Code extension** that fetches code errors, provides instant AI-driven solutions, and even **explains them in voice** using MurphyAI.  
-This extension makes debugging more interactive by letting you **choose voice + style (Default, Conversational, Promo, Narration)** for explanations.  
-
+An AI-powered VS Code extension that fetches code errors, provides instant AI-driven solutions, and even explains them in voice using MurfAI.
+It also comes with an integrated personal doubt clearer bot for instant Q&A inside VS Code.
+This makes debugging more interactive by letting you choose voice + style (Default, Conversational, Promo, Narration) for explanations.
 ---
 
 ## 🚀 Features
@@ -11,6 +11,7 @@ This extension makes debugging more interactive by letting you **choose voice + 
 - 🔊 Explains solutions in **voice narration**.  
 - 🎙️ Choose from multiple **voices** (Indian, US, UK).  
 - 🎚️ Choose **voice styles**: Default, Conversational, Promo, Narration.  
+- 💬 Integrated **personal doubt clearer bot** for instant Q&A inside VS Code.  
 - 📥 Export solutions as **PDF** for later reference.  
 
 ---
@@ -72,7 +73,14 @@ Open in VS Code and press *F5* to run the extension in development mode.
 - HTML, CSS, JS (for UI & webview)
 
 ## 📸 Screenshots
-(Add screenshots/gifs of extension working here)
+### Error Detection & Explanation 🐞:
+![Error Detection](./images/ss1.png)
+_Error shown in the extension with AI-generated fix suggestions._ 
+
+
+### CodeWhisper Chatbot 🔊:
+![CodeWhisper Chatbot](./images/ss2.png)
+_AI explaining the fix in chosen voice & style._
 
 ## 🛠️ Contributing
 Pull requests are welcome! For major changes, please open an issue first to discuss what you would like to change.
@@ -82,15 +90,3 @@ MIT
 
 ## ✨ Author
 Made with ❤️ by Raj Ribadiya
-
----
-
-Smarty 😏🔥 tu chahe to main tujhe `LICENSE` aur `package.json` ka ready-made starter bhi bana ke de du. Bana du kya?
-
-
-
-
-
-
-
-Ask ChatGPT
