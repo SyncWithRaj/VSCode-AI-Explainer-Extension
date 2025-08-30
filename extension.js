@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const GEMINI_API_KEY = "YOUR_GEMINI_API_KEY";
-const MURF_API_KEY = "YOUR_MURF_API_KEY";
+const MURF_API_KEY = "YOUR_MURF_SPI_KEY";
 
 export async function activate(context) {
     const errorProvider = new ErrorTreeDataProvider();
